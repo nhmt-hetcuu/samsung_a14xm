@@ -1,0 +1,21 @@
+# Android fstab file.
+# Recovery / TWRP fstab for Samsung Galaxy A14 5G (a14xm / SM-A146P)
+# Dynamic Partitions
+system                  /system                erofs   ro                                                 wait,,avb=vbmeta_system,logical,first_stage_mount
+system                  /system                f2fs    ro                                                 wait,,avb=vbmeta_system,logical,first_stage_mount
+system                  /system                ext4    ro                                                 wait,,avb=vbmeta_system,logical,first_stage_mount
+vendor                  /vendor                erofs   ro                                                 wait,,avb,logical,first_stage_mount
+product                 /product               erofs   ro                                                 wait,,avb,logical,first_stage_mount
+odm                     /odm                   erofs   ro                                                 wait,,avb,logical,first_stage_mount
+system_ext              /system_ext            erofs   ro                                                 wait,,avb,logical,first_stage_mount
+vendor_dlkm             /vendor_dlkm           erofs   ro                                                 wait,,avb,logical,first_stage_mount
+system_dlkm             /system_dlkm           erofs   ro                                                 wait,,avb,logical,first_stage_mount
+system_dlkm             /system_dlkm           f2fs    ro                                                 wait,,avb,logical,first_stage_mount
+system_dlkm             /system_dlkm           ext4    ro                                                 wait,,avb,logical,first_stage_mount
+odm_dlkm                /odm_dlkm              erofs   ro                                                 wait,,avb,logical,first_stage_mount
+
+# Standard partitions
+/dev/block/by-name/metadata /metadata          ext4    noatime,nosuid,nodev,discard                       wait,check,formattable,first_stage_mount
+/dev/block/by-name/userdata /data              f2fs    noatime,nosuid,nodev,discard                       wait,check,quota
+/dev/block/by-name/cache    /cache             ext4    noatime,nosuid,nodev,discard                       wait,check,formattable
+/dev/block/by-name/misc     /misc              emmc    defaults                                           recoveryonly

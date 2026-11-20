@@ -1,0 +1,184 @@
+#!/system/bin/sh
+#
+# Multi-disabler for Samsung Galaxy A14 5G (a14xm / SM-A146P) & modern Samsung devices
+# Android 11, 12, 13, 14, 15 (One UI 3 to 7)
+# Disables: FBE (File-Based Encryption), FDE, Stock Recovery restoration,
+#           Vaultkeeper, Knox Guard (KG), Proca, WSM, CASS, Defex, TLC HDM/ICCC
+#
+
+set -e
+
+ui_print() {
+  echo "$1"
+  if [ -n "$OUTFD" ]; then
+    echo "ui_print $1" >&$OUTFD
+    echo "ui_print" >&$OUTFD
+  fi
+}
+
+# If run from recovery flashable zip, OUTFD is passed as 2nd arg
+if [ -n "$2" ]; then
+  OUTFD=$2
+fi
+
+ui_print "==========================================="
+ui_print " Samsung Multi-Disabler for Android 11-15 "
+ui_print " Device: Galaxy A14 5G (SM-A146P / a14xm)  "
+ui_print "==========================================="
+
+md5() {
+  md5sum -b "$1" | cut -d' ' -f1
+}
+
+file_changed() {
+  local file="$1"
+  local old_md5="$2"
+  local new_md5=$(md5 "$file")
+
+  if [ "$new_md5" != "$old_md5" ]; then
+    ui_print "  -> Modified: $file"
+  else
+    ui_print "  -> Unchanged: $file"
+  fi
+}
+
+rm_from_manifest() {
+  local service=$1
+  local i
+  for i in /vendor/etc/vintf/manifest.xml \
+           /system/etc/vintf/compatibility_matrix.device.xml \
+           /system_root/system/etc/vintf/compatibility_matrix.device.xml \
+           /vendor/etc/vintf/manifest/vaultkeeper_manifest.xml \
+           /vendor/etc/vintf/manifest/wsm_manifest.xml; do
+    if [ -f "$i" ]; then
+      sed -i -e '/<hal format="hidl">/{N;/<name>vendor\.samsung\(\.hardware\)\?\.security\.'"$service"'<\/name>/{:loop;N;/<\/hal>/!bloop;d}}' "$i" 2>/dev/null || true
+    fi
+  done
+}
+
+disable_fbe() {
+  ui_print " - Disabling File-Based Encryption (FBE)..."
+  local fstab_files=$(find /vendor/etc -type f -name "fstab*" 2>/dev/null || true)
+  for f in $fstab_files; do
+    if grep -q "fileencryption=" "$f" 2>/dev/null; then
+      local old_m=$(md5 "$f")
+      sed -i -e 's/fileencryption=[^,]*/encryptable/g' "$f" 2>/dev/null || true
+      file_changed "$f" "$old_m"
+    fi
+  done
+}
+
+disable_fde() {
+  ui_print " - Disabling Full-Disk Encryption (FDE)..."
+  local fstab_files=$(find /vendor/etc -type f -name "fstab*" 2>/dev/null || true)
+  for f in $fstab_files; do
+    if grep -q "forceencrypt" "$f" 2>/dev/null; then
+      local old_m=$(md5 "$f")
+      sed -i -e 's/forceencrypt=[^,]*/encryptable/g' "$f" 2>/dev/null || true
+      file_changed "$f" "$old_m"
+    fi
+  done
+}
+
+disable_recovery_restoration() {
+  ui_print " - Disabling stock recovery auto-restoration..."
+  local r="recovery-from-boot.p"
+  local targets="/system /system_root/system /vendor"
+  local found=false
+
+  for dir in $targets; do
+    if [ -f "$dir/$r" ]; then
+      mv "$dir/$r" "$dir/${r}.bak" 2>/dev/null && ui_print "  -> Disabled: $dir/$r"
+      found=true
+    fi
+    if [ -f "$dir/bin/install-recovery.sh" ]; then
+      mv "$dir/bin/install-recovery.sh" "$dir/bin/install-recovery.sh.bak" 2>/dev/null && ui_print "  -> Disabled: $dir/bin/install-recovery.sh"
+      found=true
+    fi
+    if [ -f "$dir/etc/install-recovery.sh" ]; then
+      mv "$dir/etc/install-recovery.sh" "$dir/etc/install-recovery.sh.bak" 2>/dev/null && ui_print "  -> Disabled: $dir/etc/install-recovery.sh"
+      found=true
+    fi
+  done
+
+  if [ "$found" = "false" ]; then
+    ui_print "  -> No stock recovery restoration script found (already clean)."
+  fi
+}
+
+disable_vaultkeeper() {
+  ui_print " - Disabling Samsung VaultKeeper..."
+  for rc in /system/etc/init/vaultkeeper*.rc /system/etc/init/vk*.rc \
+            /vendor/etc/init/vaultkeeper*.rc /vendor/etc/init/vk*.rc \
+            /system_root/system/etc/init/vaultkeeper*.rc; do
+    if [ -f "$rc" ]; then
+      sed -i 's/^service /#service /g' "$rc" 2>/dev/null || true
+      ui_print "  -> Disabled init: $rc"
+    fi
+  done
+  rm_from_manifest vaultkeeper
+  for b in /system/bin/vaultkeeperd /system_root/system/bin/vaultkeeperd /vendor/bin/vaultkeeperd /vendor/bin/hw/vendor.samsung.hardware.security.vaultkeeper*; do
+    if [ -f "$b" ]; then
+      chmod 000 "$b" 2>/dev/null || true
+    fi
+  done
+}
+
+disable_proca() {
+  ui_print " - Disabling Process Authentication (PROCA)..."
+  for rc in /vendor/etc/init/pa_daemon*.rc; do
+    if [ -f "$rc" ]; then
+      sed -i 's/^service /#service /g' "$rc" 2>/dev/null || true
+      ui_print "  -> Disabled init: $rc"
+    fi
+  done
+  rm_from_manifest proca
+}
+
+disable_knox_guard() {
+  ui_print " - Disabling Knox Guard (KG) & TLC Services..."
+  for xml in /vendor/etc/vintf/manifest/vendor.samsung.hardware.tlc.kg* \
+             /vendor/etc/vintf/manifest/vendor.samsung.hardware.tlc.hdm* \
+             /vendor/etc/vintf/manifest/vendor.samsung.hardware.tlc.iccc*; do
+    if [ -f "$xml" ]; then
+      rm -f "$xml" 2>/dev/null && ui_print "  -> Removed: $xml"
+    fi
+  done
+}
+
+disable_wsm() {
+  ui_print " - Disabling WSM & CASS..."
+  for rc in /vendor/etc/init/wsm*.rc /vendor/etc/init/cass*.rc; do
+    if [ -f "$rc" ]; then
+      sed -i 's/^service /#service /g' "$rc" 2>/dev/null || true
+      ui_print "  -> Disabled init: $rc"
+    fi
+  done
+  rm_from_manifest wsm
+  rm_from_manifest cass
+}
+
+# Mount partitions RW
+ui_print " - Mounting partitions..."
+mount -o rw /system 2>/dev/null || mount -o rw /system_root 2>/dev/null || true
+mount -o rw /vendor 2>/dev/null || true
+mount -o rw /product 2>/dev/null || true
+
+disable_fbe
+disable_fde
+disable_recovery_restoration
+disable_vaultkeeper
+disable_proca
+disable_knox_guard
+disable_wsm
+
+ui_print " - Syncing changes to disk..."
+sync
+
+ui_print ""
+ui_print "==========================================="
+ui_print " Multi-disabler applied successfully!      "
+ui_print " Tip: In TWRP, now you can Wipe -> Format   "
+ui_print " Data (type 'yes') if encryption was active "
+ui_print "==========================================="
+exit 0

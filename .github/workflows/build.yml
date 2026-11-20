@@ -1,0 +1,89 @@
+name: Build OrangeFox Recovery for a14xm
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANIFEST_BRANCH:
+        description: 'OrangeFox Manifest Branch'
+        required: true
+        default: 'fox_12.1'
+      BUILD_TARGET:
+        description: 'Lunch Target (omni_a14xm-eng or twrp_a14xm-eng)'
+        required: true
+        default: 'twrp_a14xm-eng'
+
+jobs:
+  build:
+    name: Build OrangeFox Recovery
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Device Tree
+        uses: actions/checkout@v4
+        with:
+          path: device/samsung/a14xm
+
+      - name: Free Up Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Set Up Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev \
+            libc6-dev-i386 libncurses5 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev \
+            libxml2 libxml2-utils xsltproc unzip fontconfig libssl-dev python3 python3-pip \
+            python-is-python3 rsync
+          sudo curl --create-dirs -L -o /usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          sudo chmod a+rx /usr/local/bin/repo
+          git config --global user.name "builder"
+          git config --global user.email "builder@github.actions"
+
+      - name: Initialize & Sync OrangeFox Manifest
+        run: |
+          mkdir -p ~/work
+          cd ~/work
+          repo init -u https://gitlab.com/OrangeFox/Manifest.git -b ${{ github.event.inputs.MANIFEST_BRANCH }} --depth=1
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Move Device Tree to Build Tree
+        run: |
+          mkdir -p ~/work/device/samsung
+          rm -rf ~/work/device/samsung/a14xm
+          cp -r $GITHUB_WORKSPACE/device/samsung/a14xm ~/work/device/samsung/
+
+      - name: Build OrangeFox Recovery
+        run: |
+          cd ~/work
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE="a14xm"
+          export LC_ALL="C"
+          source build/envsetup.sh
+          lunch ${{ github.event.inputs.BUILD_TARGET }}
+          mka recoveryimage -j$(nproc --all)
+
+      - name: Package Output (Odin .tar and .img)
+        run: |
+          cd ~/work
+          OUT_DIR=$(find out/target/product/a14xm -name "recovery.img" -printf '%h\n' | head -n 1)
+          if [ -z "$OUT_DIR" ]; then
+            echo "Build failed: recovery.img not found!"
+            exit 1
+          fi
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          cp $OUT_DIR/recovery.img $GITHUB_WORKSPACE/artifacts/recovery.img
+          cd $GITHUB_WORKSPACE/artifacts
+          tar -cvf OrangeFox-a14xm-Unofficial.tar recovery.img
+          find ~/work/out/target/product/a14xm -name "OrangeFox*.zip" -exec cp {} $GITHUB_WORKSPACE/artifacts/ \; 2>/dev/null || true
+          ls -lh $GITHUB_WORKSPACE/artifacts/
+
+      - name: Upload Recovery Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-a14xm-build
+          path: artifacts/*
+          if-no-files-found: error
