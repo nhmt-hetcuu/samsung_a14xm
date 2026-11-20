@@ -71,12 +71,12 @@ jobs:
           cd "$HOME/work"
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE="a14xm"
+          export FOX_BUILD_TYPE="Unofficial"
           export LC_ALL="C"
           echo "=== Sourcing envsetup.sh ==="
-          source build/envsetup.sh || {
-            echo "Error: source build/envsetup.sh failed!"
-            exit 1
-          }
+          set +e
+          source build/envsetup.sh
+          set -e
           echo "=== Running lunch for ${{ github.event.inputs.BUILD_TARGET }} ==="
           lunch ${{ github.event.inputs.BUILD_TARGET }} || {
             echo "Error: lunch command failed!"
