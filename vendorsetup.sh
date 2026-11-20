@@ -4,6 +4,3 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-export FOX_BUILD_DEVICE="a14xm"
-export OF_MAINTAINER="nhmt"
-

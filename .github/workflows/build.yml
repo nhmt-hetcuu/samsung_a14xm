@@ -72,8 +72,18 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE="a14xm"
           export LC_ALL="C"
-          source build/envsetup.sh
-          lunch ${{ github.event.inputs.BUILD_TARGET }}
+          echo "=== Sourcing envsetup.sh ==="
+          source build/envsetup.sh || {
+            echo "Error: source build/envsetup.sh failed!"
+            exit 1
+          }
+          echo "=== Running lunch for ${{ github.event.inputs.BUILD_TARGET }} ==="
+          lunch ${{ github.event.inputs.BUILD_TARGET }} || {
+            echo "Error: lunch command failed!"
+            find out -name "*.log" -exec cat {} + 2>/dev/null || true
+            exit 1
+          }
+          echo "=== Building recoveryimage ==="
           mka recoveryimage -j$(nproc --all)
 
       - name: Package Output (Odin .tar and .img)
